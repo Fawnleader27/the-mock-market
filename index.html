@@ -1,482 +1,227 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>MockX Market v2 — Real NYSE Top 50</title>
-
-<!--
-  ============================================================
-  MOCKX MARKET v2 — real NYSE prices, updated hourly
-  ============================================================
-  This is a SEPARATE game from the original MockX Market. It does not
-  touch or depend on that file at all — different storage keys, different
-  Firebase paths, so both can run side by side (even in the same browser)
-  without interfering with each other.
-
-  How this version is different:
-    - Trades real, currently-listed companies (a fixed top-50-by-market-cap
-      NYSE snapshot from Sept 2026), not invented ones.
-    - Prices are NOT simulated locally. They're fetched once an hour by a
-      separate script (scripts/fetch-prices.js), run on a schedule via
-      GitHub Actions, and written into Firebase. This page just reads
-      whatever was last written there.
-    - Because of that, this file alone is not enough to make the game
-      work — someone needs to also set up the hourly fetch job. See
-      README.md in this project for the full setup walkthrough.
-    - There's no invented "news wire" — real prices move for real (often
-      unexplained-in-the-moment) reasons, same as actual investing.
-
-  SETUP (for this page specifically):
-  1) Use the SAME Firebase project as your fetch job (or a fresh one —
-     either works, they just both need to point at the same database).
-  2) Paste your Firebase config below, replacing the placeholders.
-  3) Open this file in a browser, or host it via Firebase Hosting
-     (see README.md for the two-command deploy).
-  ============================================================
--->
-
-<script>
-  const FIREBASE_CONFIG = {
-    apiKey: "AIzaSyBY9joJofDJ8hip0MrvGUQQOQMo6zMlGwk",
-    authDomain: "lhs-econ-club-sim-v2.firebaseapp.com",
-    databaseURL: "https://lhs-econ-club-sim-v2-default-rtdb.firebaseio.com",
-    projectId: "lhs-econ-club-sim-v2",
-  };
-</script>
-
-<script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js" crossorigin></script>
-<script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js" crossorigin></script>
-<script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js" crossorigin></script>
-<script src="https://cdn.tailwindcss.com"></script>
-<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-database-compat.js"></script>
-
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Mock Market — Overview & Tutorial</title>
+<meta name="description" content="The Mock Market: the Lebanon High School Economics Club's paper-trading game. Real NYSE prices, $100,000 in pretend money, one shared leaderboard.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
-  html, body { background: #0B0E14; margin: 0; }
-  .ticker-track { animation: mockx-scroll 55s linear infinite; width: max-content; }
-  @keyframes mockx-scroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
-  @media (prefers-reduced-motion: reduce) { .ticker-track { animation: none; } }
-  ::-webkit-scrollbar { width: 8px; height: 8px; }
-  ::-webkit-scrollbar-thumb { background: #232938; border-radius: 4px; }
+  :root {
+    --bg: #0B0E14; --bg-deep: #080A0F; --panel: #12161F; --panel-2: #171C27;
+    --border: #232938; --text: #E7EAF0; --muted: #8992A6;
+    --amber: #E8A33D; --green: #3ECF8E; --red: #F0555A;
+    --display: 'Space Grotesk', 'IBM Plex Sans', sans-serif;
+    --body: 'IBM Plex Sans', system-ui, sans-serif;
+    --mono: 'IBM Plex Mono', ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--body); -webkit-font-smoothing: antialiased; }
+  body { overflow-x: hidden; }
+  a { color: var(--amber); } a:hover { color: #f0b65a; }
+  h1, h2, h3, p { margin: 0; }
+
+  /* Ticker tape */
+  .tape { width: 100%; overflow: hidden; background: var(--bg-deep); border-bottom: 1px solid var(--border); padding: 14px 0; }
+  .tape-track { display: flex; gap: 56px; width: max-content; animation: mockmarket-scroll 42s linear infinite; }
+  .tape-item { display: flex; align-items: center; gap: 8px; white-space: nowrap; font-family: var(--mono); font-size: 13px; color: var(--muted); }
+  .tape-item b { color: var(--text); font-weight: 500; }
+  @keyframes mockmarket-scroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+  @media (prefers-reduced-motion: reduce) { .tape-track { animation: none; } }
+
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; display: flex; flex-direction: column; gap: 120px; }
+  section { display: flex; flex-direction: column; gap: 32px; }
+  .intro { display: flex; flex-direction: column; gap: 16px; max-width: 720px; }
+  h2 { font-family: var(--display); font-weight: 600; font-size: 34px; }
+  .lede { font-size: 16px; line-height: 1.7; color: var(--muted); }
+
+  /* Hero */
+  .hero { align-items: flex-start; gap: 28px; padding-top: 96px; }
+  .eyebrow { display: inline-flex; padding: 7px 16px; border: 1px solid var(--border); border-radius: 999px; font-family: var(--mono); font-size: 12px; letter-spacing: 0.18em; color: var(--amber); }
+  .hero h1 { font-family: var(--display); font-weight: 700; font-size: 72px; line-height: 1.02; letter-spacing: -0.02em; }
+  .hero .sub { max-width: 640px; font-size: 20px; line-height: 1.55; color: var(--muted); }
+  .badges { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px; }
+  .badge { display: flex; align-items: center; gap: 8px; padding: 10px 16px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; font-size: 14px; }
+  .play { display: inline-flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 26px; background: var(--amber); color: #14110B; border-radius: 10px; font-family: var(--display); font-weight: 600; font-size: 17px; text-decoration: none; }
+  .play:hover { background: #f0b65a; color: #14110B; }
+  .play:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
+  .play-row { display: flex; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+
+  /* Features */
+  .features { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+  .feature { display: flex; flex-direction: column; gap: 14px; padding: 28px; background: var(--panel); border: 1px solid var(--border); border-radius: 16px; }
+  .glyph { width: 40px; height: 40px; border-radius: 10px; background: var(--panel-2); display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 18px; font-weight: 500; }
+  .feature h3, .step h3 { font-size: 17px; font-weight: 600; }
+  .feature p { font-size: 14px; line-height: 1.6; color: var(--muted); }
+
+  /* Stacked lists (steps, habits, faq) */
+  .stack { display: flex; flex-direction: column; gap: 2px; background: var(--border); border-radius: 16px; overflow: hidden; margin: 0; padding: 0; list-style: none; }
+  .stack > * { background: var(--panel); }
+  .step { display: flex; gap: 24px; padding: 28px; }
+  .step .num { flex-shrink: 0; width: 44px; font-family: var(--mono); font-size: 15px; color: var(--amber); padding-top: 2px; }
+  .step .txt { display: flex; flex-direction: column; gap: 6px; }
+  .step p { font-size: 15px; line-height: 1.6; color: var(--muted); max-width: 620px; }
+  .habit { display: flex; gap: 16px; padding: 22px 28px; align-items: flex-start; font-size: 15px; line-height: 1.6; }
+  .habit .dot { width: 8px; height: 8px; background: var(--green); margin-top: 8px; }
+  .habit strong { font-weight: 600; }
+
+  .faq-btn { all: unset; box-sizing: border-box; width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 22px 28px; cursor: pointer; font-family: var(--body); font-size: 16px; font-weight: 500; color: var(--text); min-height: 44px; }
+  .faq-btn:focus-visible { outline: 2px solid var(--amber); outline-offset: -2px; }
+  .faq-btn .marker { font-family: var(--mono); font-size: 18px; color: var(--muted); flex-shrink: 0; }
+  .faq-a { padding: 0 28px 24px; }
+  .faq-a p { font-size: 15px; line-height: 1.65; color: var(--muted); max-width: 620px; }
+  .faq-a[hidden] { display: none; }
+
+  footer { display: flex; flex-direction: column; gap: 8px; padding: 40px 0 96px; border-top: 1px solid var(--border); margin-top: -40px; }
+  footer .club { font-size: 15px; font-weight: 500; }
+  footer .tag { font-size: 14px; color: var(--muted); }
+
+  @media (max-width: 760px) {
+    .wrap { padding: 0 16px; gap: 80px; }
+    .hero { padding-top: 56px; }
+    .hero h1 { font-size: 48px; }
+    .hero .sub { font-size: 18px; }
+    h2 { font-size: 28px; }
+    .features { grid-template-columns: 1fr; }
+    .step { gap: 14px; padding: 22px 18px; }
+    .step .num { width: 28px; }
+    .habit, .faq-btn { padding-left: 18px; padding-right: 18px; }
+    .faq-a { padding: 0 18px 20px; }
+  }
 </style>
 </head>
 <body>
-<div id="root"></div>
 
-<script type="text/babel" data-presets="react">
-const { useState, useEffect, useMemo } = React;
+<div class="tape" aria-hidden="true"><div class="tape-track" id="tape"></div></div>
 
-/* ------------------------------------------------------------
-   Firebase init (guarded — game still runs if not configured)
-------------------------------------------------------------- */
-let dbAvailable = false;
-let db = null;
-try {
-  if (FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.apiKey !== "YOUR_API_KEY") {
-    firebase.initializeApp(FIREBASE_CONFIG);
-    db = firebase.database();
-    dbAvailable = true;
-  }
-} catch (e) {
-  console.warn("Firebase not configured:", e);
-}
+<main class="wrap">
 
-function sanitizeKey(name) {
-  return name.trim().replace(/[.#$\[\]/]/g, "_").slice(0, 40);
-}
-
-const STARTING_CASH = 100000;
-
-function fmt$(n) { return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
-function fmtCompact$(n) {
-  const sign = n < 0 ? "-" : "";
-  return sign + "$" + Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-}
-function timeAgo(ts) {
-  if (!ts) return "never";
-  const mins = Math.floor((Date.now() - ts) / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins} min ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  return `${days}d ago`;
-}
-
-function MockXMarketV2() {
-  const [playerName, setPlayerName] = useState(null);
-  const [joinInput, setJoinInput] = useState("");
-  const [joinError, setJoinError] = useState("");
-  const [portfolio, setPortfolio] = useState(null);
-  const [prices, setPrices] = useState(null); // { TICKER: {price, previousClose, change, changePercent, name, sector, updatedAt} }
-  const [meta, setMeta] = useState(null);
-  const [selected, setSelected] = useState(null);
-  const [tradeShares, setTradeShares] = useState("");
-  const [tradeMsg, setTradeMsg] = useState(null);
-  const [leaderboard, setLeaderboard] = useState([]);
-  const [showReset, setShowReset] = useState(false);
-  const [search, setSearch] = useState("");
-  const [sortBy, setSortBy] = useState("ticker"); // ticker | change | price
-
-  // resume session from localStorage (separate keys from v1)
-  useEffect(() => {
-    const savedName = localStorage.getItem("mockx_v2_player_name");
-    const savedPortfolio = localStorage.getItem("mockx_v2_portfolio");
-    if (savedName && savedPortfolio) {
-      try {
-        setPortfolio(JSON.parse(savedPortfolio));
-        setPlayerName(savedName);
-      } catch (e) { /* corrupted save, ignore */ }
-    }
-  }, []);
-
-  // live price subscription
-  useEffect(() => {
-    if (!dbAvailable) return;
-    const ref = db.ref("mockx_v2_prices");
-    const handler = (snapshot) => {
-      const val = snapshot.val() || {};
-      const { _meta, ...tickerData } = val;
-      setPrices(tickerData);
-      setMeta(_meta || null);
-      if (!selected) {
-        const first = Object.keys(tickerData).sort()[0];
-        if (first) setSelected(first);
-      }
-    };
-    ref.on("value", handler);
-    return () => ref.off("value", handler);
-  }, []); // eslint-disable-line
-
-  const priceByTicker = useMemo(() => {
-    const m = {};
-    if (prices) Object.values(prices).forEach((c) => { m[c.ticker] = c.price; });
-    return m;
-  }, [prices]);
-
-  const holdingsValue = useMemo(() => {
-    if (!portfolio) return 0;
-    return Object.entries(portfolio.holdings).reduce((sum, [ticker, h]) => sum + h.shares * (priceByTicker[ticker] || 0), 0);
-  }, [portfolio, priceByTicker]);
-
-  const netWorth = portfolio ? portfolio.cash + holdingsValue : 0;
-
-  // persist portfolio locally + push to shared leaderboard (separate path from v1)
-  useEffect(() => {
-    if (!playerName || !portfolio) return;
-    localStorage.setItem("mockx_v2_portfolio", JSON.stringify(portfolio));
-    if (dbAvailable) {
-      db.ref("mockx_v2_leaderboard/" + sanitizeKey(playerName)).set({
-        name: playerName, netWorth, updatedAt: Date.now(),
-      }).catch((e) => console.warn("leaderboard write failed:", e));
-    }
-  }, [portfolio, playerName, netWorth]);
-
-  // live leaderboard subscription
-  useEffect(() => {
-    if (!dbAvailable || !playerName) return;
-    const ref = db.ref("mockx_v2_leaderboard");
-    const handler = (snapshot) => {
-      const val = snapshot.val() || {};
-      const entries = Object.values(val).sort((a, b) => b.netWorth - a.netWorth);
-      setLeaderboard(entries);
-    };
-    ref.on("value", handler);
-    return () => ref.off("value", handler);
-  }, [playerName]);
-
-  function handleJoin() {
-    const name = joinInput.trim();
-    if (!name) { setJoinError("Enter a name to join the market."); return; }
-    if (name.length > 24) { setJoinError("Keep it under 24 characters."); return; }
-    const fresh = { cash: STARTING_CASH, holdings: {} };
-    localStorage.setItem("mockx_v2_player_name", name);
-    localStorage.setItem("mockx_v2_portfolio", JSON.stringify(fresh));
-    setPortfolio(fresh);
-    setPlayerName(name);
-    setJoinError("");
-  }
-
-  function handleReset() {
-    const fresh = { cash: STARTING_CASH, holdings: {} };
-    setPortfolio(fresh);
-    setShowReset(false);
-    localStorage.setItem("mockx_v2_portfolio", JSON.stringify(fresh));
-  }
-
-  function doTrade(action) {
-    setTradeMsg(null);
-    const shares = parseInt(tradeShares, 10);
-    if (!shares || shares <= 0) { setTradeMsg({ ok: false, text: "Enter a positive whole number of shares." }); return; }
-    const price = priceByTicker[selected];
-    if (!price) { setTradeMsg({ ok: false, text: "No price available for this stock yet." }); return; }
-    const cost = shares * price;
-    const h = portfolio.holdings[selected];
-
-    if (action === "buy") {
-      if (cost > portfolio.cash) {
-        setTradeMsg({ ok: false, text: `Not enough cash — need ${fmtCompact$(cost)}, have ${fmtCompact$(portfolio.cash)}.` });
-        return;
-      }
-      const prevShares = h ? h.shares : 0;
-      const prevAvg = h ? h.avgCost : 0;
-      const newShares = prevShares + shares;
-      const newAvg = (prevShares * prevAvg + shares * price) / newShares;
-      setPortfolio({ cash: portfolio.cash - cost, holdings: { ...portfolio.holdings, [selected]: { shares: newShares, avgCost: newAvg } } });
-      setTradeMsg({ ok: true, text: `Bought ${shares} ${selected} @ $${fmt$(price)}.` });
-    } else {
-      if (!h || shares > h.shares) { setTradeMsg({ ok: false, text: `You only hold ${h ? h.shares : 0} shares of ${selected}.` }); return; }
-      const remaining = h.shares - shares;
-      const holdings = { ...portfolio.holdings };
-      if (remaining === 0) delete holdings[selected]; else holdings[selected] = { shares: remaining, avgCost: h.avgCost };
-      setPortfolio({ cash: portfolio.cash + cost, holdings });
-      setTradeMsg({ ok: true, text: `Sold ${shares} ${selected} @ $${fmt$(price)}.` });
-    }
-    setTradeShares("");
-  }
-
-  const V = { bg: "#0B0E14", panel: "#12161F", panel2: "#171C27", border: "#232938", text: "#E7EAF0", muted: "#8992A6", amber: "#E8A33D", green: "#3ECF8E", red: "#F0555A" };
-
-  const companyList = useMemo(() => {
-    if (!prices) return [];
-    let list = Object.values(prices);
-    if (search.trim()) {
-      const q = search.trim().toLowerCase();
-      list = list.filter((c) => c.ticker.toLowerCase().includes(q) || c.name.toLowerCase().includes(q));
-    }
-    if (sortBy === "ticker") list = [...list].sort((a, b) => a.ticker.localeCompare(b.ticker));
-    if (sortBy === "change") list = [...list].sort((a, b) => (b.changePercent || 0) - (a.changePercent || 0));
-    if (sortBy === "price") list = [...list].sort((a, b) => b.price - a.price);
-    return list;
-  }, [prices, search, sortBy]);
-
-  const selectedCompany = prices && selected ? prices[selected] : null;
-  const selectedHolding = portfolio && selected ? portfolio.holdings[selected] : null;
-  const totalReturn = portfolio ? netWorth - STARTING_CASH : 0;
-  const totalReturnPct = portfolio ? (totalReturn / STARTING_CASH) * 100 : 0;
-
-  if (!playerName) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-6" style={{ background: V.bg }}>
-        <div className="w-full max-w-sm">
-          <div className="text-center mb-8">
-            <div className="inline-flex items-center gap-2 font-mono text-xs tracking-[0.3em] px-3 py-1 rounded-full border mb-4" style={{ borderColor: V.border, color: V.amber }}>MOCKX v2 · REAL NYSE PRICES</div>
-            <h1 className="text-3xl font-bold tracking-tight" style={{ color: V.text }}>Welcome to MockX Market v2</h1>
-            <p className="mt-2 text-sm" style={{ color: V.muted }}>Trade the 50 largest NYSE companies with ${STARTING_CASH.toLocaleString()} in play money. Prices are real, refreshed once an hour.</p>
-          </div>
-          <div className="rounded-xl border p-5" style={{ background: V.panel, borderColor: V.border }}>
-            {!dbAvailable && (
-              <div className="mb-4 text-xs rounded-lg px-3 py-2" style={{ background: "#3a2a12", color: V.amber }}>
-                Not connected to Firebase yet — add your config at the top of this file. Neither prices nor the leaderboard will load without it.
-              </div>
-            )}
-            {dbAvailable && prices === null && (
-              <div className="mb-4 text-xs rounded-lg px-3 py-2" style={{ background: "#1a2333", color: V.muted }}>
-                Connected — waiting for the first price data. If this doesn't clear in a few seconds, the hourly fetch job may not have run yet (see README.md).
-              </div>
-            )}
-            <label className="block text-xs font-mono mb-2" style={{ color: V.muted }}>YOUR NAME (shown on the club leaderboard)</label>
-            <input value={joinInput} onChange={(e) => setJoinInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleJoin()}
-              placeholder="e.g. Jordan R." className="w-full rounded-lg px-3 py-2 outline-none border font-mono text-sm mb-2"
-              style={{ background: V.panel2, borderColor: V.border, color: V.text }} />
-            {joinError && <div className="mb-2 text-xs" style={{ color: V.red }}>{joinError}</div>}
-            <button onClick={handleJoin} className="mt-2 w-full flex items-center justify-center gap-2 rounded-lg py-2.5 font-semibold text-sm hover:opacity-90" style={{ background: V.amber, color: "#1A1206" }}>Join the market</button>
-            <p className="mt-3 text-[11px] leading-relaxed" style={{ color: V.muted }}>Your name and net worth are visible to other club members on the leaderboard. Nothing else is shared.</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen p-4" style={{ background: V.bg }}>
-      <div className="max-w-6xl mx-auto rounded-2xl border overflow-hidden" style={{ borderColor: V.border, background: V.bg }}>
-        <div className="relative overflow-hidden border-b py-2" style={{ borderColor: V.border, background: "#080A0F" }}>
-          {prices ? (
-            <div className="flex gap-8 whitespace-nowrap ticker-track font-mono text-xs">
-              {[...Object.values(prices), ...Object.values(prices)].map((c, i) => {
-                const up = (c.changePercent || 0) >= 0;
-                return (
-                  <span key={i} className="flex items-center gap-1.5" style={{ color: V.muted }}>
-                    <span style={{ color: V.text }}>{c.ticker}</span><span>${fmt$(c.price)}</span>
-                    <span style={{ color: up ? V.green : V.red }}>{up ? "▲" : "▼"} {Math.abs(c.changePercent || 0).toFixed(2)}%</span>
-                  </span>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="px-4 text-xs font-mono" style={{ color: V.muted }}>Waiting for price data…</div>
-          )}
-        </div>
-
-        <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-4 border-b" style={{ borderColor: V.border }}>
-          <div>
-            <div className="text-xs font-mono tracking-widest" style={{ color: V.amber }}>MOCKX MARKET v2 {!dbAvailable && "(not connected)"}</div>
-            <div className="text-sm mt-0.5" style={{ color: V.muted }}>
-              Trading as <span style={{ color: V.text }}>{playerName}</span>
-              {meta && <span> · prices as of {timeAgo(meta.lastRun)}</span>}
-            </div>
-          </div>
-          <div className="flex items-center gap-6">
-            <div className="text-right">
-              <div className="text-[11px] font-mono" style={{ color: V.muted }}>NET WORTH</div>
-              <div className="text-xl font-bold font-mono" style={{ color: V.text }}>${fmt$(netWorth)}</div>
-            </div>
-            <div className="text-right">
-              <div className="text-[11px] font-mono" style={{ color: V.muted }}>TOTAL RETURN</div>
-              <div className="text-sm font-mono font-semibold" style={{ color: totalReturn >= 0 ? V.green : V.red }}>
-                {totalReturn >= 0 ? "▲" : "▼"} {fmtCompact$(totalReturn)} ({totalReturnPct.toFixed(1)}%)
-              </div>
-            </div>
-            <button onClick={() => setShowReset(true)} className="p-2 rounded-lg border hover:opacity-80 text-xs" style={{ borderColor: V.border, color: V.muted }}>Reset</button>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 p-5">
-          <div className="lg:col-span-2 space-y-4">
-            <div className="rounded-xl border" style={{ borderColor: V.border, background: V.panel }}>
-              <div className="px-4 py-3 border-b flex flex-wrap items-center gap-2 justify-between" style={{ borderColor: V.border }}>
-                <span className="text-xs font-mono tracking-widest" style={{ color: V.muted }}>NYSE TOP 50</span>
-                <div className="flex items-center gap-2">
-                  <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search ticker or name…"
-                    className="text-xs rounded-lg px-2.5 py-1.5 outline-none border font-mono w-40"
-                    style={{ background: V.panel2, borderColor: V.border, color: V.text }} />
-                  <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}
-                    className="text-xs rounded-lg px-2 py-1.5 outline-none border font-mono"
-                    style={{ background: V.panel2, borderColor: V.border, color: V.text }}>
-                    <option value="ticker">A–Z</option>
-                    <option value="change">Top movers</option>
-                    <option value="price">Price</option>
-                  </select>
-                </div>
-              </div>
-              <div className="divide-y max-h-[520px] overflow-y-auto" style={{ borderColor: V.border }}>
-                {!prices && <div className="px-4 py-6 text-xs" style={{ color: V.muted }}>No price data yet.</div>}
-                {prices && companyList.length === 0 && <div className="px-4 py-6 text-xs" style={{ color: V.muted }}>No matches for "{search}".</div>}
-                {companyList.map((c) => {
-                  const up = (c.changePercent || 0) >= 0;
-                  const isSel = c.ticker === selected;
-                  return (
-                    <button key={c.ticker} onClick={() => { setSelected(c.ticker); setTradeMsg(null); }}
-                      className="w-full flex items-center justify-between px-4 py-2.5 text-left" style={{ background: isSel ? V.panel2 : "transparent" }}>
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-16 shrink-0">
-                          <div className="font-mono text-sm font-bold" style={{ color: V.text }}>{c.ticker}</div>
-                          <div className="text-[10px]" style={{ color: V.muted }}>{c.sector}</div>
-                        </div>
-                        <div className="truncate text-xs hidden sm:block" style={{ color: V.muted }}>{c.name}</div>
-                      </div>
-                      <div className="text-right w-24 shrink-0">
-                        <div className="font-mono text-sm" style={{ color: V.text }}>${fmt$(c.price)}</div>
-                        <div className="font-mono text-[11px]" style={{ color: up ? V.green : V.red }}>{up ? "▲" : "▼"} {Math.abs(c.changePercent || 0).toFixed(2)}%</div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="rounded-xl border p-4 text-[11px] leading-relaxed" style={{ borderColor: V.border, background: V.panel, color: V.muted }}>
-              Prices update roughly once an hour on trading days and come from Twelve Data. This is not a live feed — treat prices as delayed, and don't use this app to make real trading decisions.
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <div className="rounded-xl border p-4" style={{ borderColor: V.border, background: V.panel }}>
-              {selectedCompany ? (
-                <React.Fragment>
-                  <div className="flex items-baseline justify-between">
-                    <span className="font-mono font-bold text-sm" style={{ color: V.text }}>{selectedCompany.ticker}</span>
-                    <span className="font-mono text-sm" style={{ color: V.text }}>${fmt$(selectedCompany.price)}</span>
-                  </div>
-                  <div className="text-[11px] mb-3" style={{ color: V.muted }}>{selectedCompany.name}</div>
-                  {selectedHolding && (
-                    <div className="text-[11px] mb-3 rounded-lg px-2.5 py-2" style={{ background: V.panel2, color: V.muted }}>
-                      You hold <span style={{ color: V.text }}>{selectedHolding.shares}</span> shares · avg cost ${fmt$(selectedHolding.avgCost)}
-                    </div>
-                  )}
-                  <input type="number" min="1" placeholder="Shares" value={tradeShares} onChange={(e) => setTradeShares(e.target.value)}
-                    className="w-full rounded-lg px-3 py-2 outline-none border font-mono text-sm mb-2" style={{ background: V.panel2, borderColor: V.border, color: V.text }} />
-                  {tradeShares && !isNaN(parseInt(tradeShares, 10)) && parseInt(tradeShares, 10) > 0 && (
-                    <div className="text-[11px] mb-2" style={{ color: V.muted }}>Est. total: ${fmt$(parseInt(tradeShares, 10) * selectedCompany.price)}</div>
-                  )}
-                  <div className="grid grid-cols-2 gap-2">
-                    <button onClick={() => doTrade("buy")} className="rounded-lg py-2 text-sm font-semibold hover:opacity-90" style={{ background: V.green, color: "#08201A" }}>Buy</button>
-                    <button onClick={() => doTrade("sell")} className="rounded-lg py-2 text-sm font-semibold hover:opacity-90" style={{ background: V.red, color: "#2A0A0B" }}>Sell</button>
-                  </div>
-                  {tradeMsg && <div className="mt-2 text-[11px]" style={{ color: tradeMsg.ok ? V.green : V.red }}>{tradeMsg.text}</div>}
-                </React.Fragment>
-              ) : (
-                <div className="text-xs" style={{ color: V.muted }}>Pick a stock from the board to trade.</div>
-              )}
-            </div>
-
-            <div className="rounded-xl border p-4" style={{ borderColor: V.border, background: V.panel }}>
-              <span className="text-xs font-mono tracking-widest" style={{ color: V.muted }}>PORTFOLIO</span>
-              <div className="flex justify-between text-xs my-2">
-                <span style={{ color: V.muted }}>Cash</span>
-                <span className="font-mono" style={{ color: V.text }}>${fmt$(portfolio.cash)}</span>
-              </div>
-              {Object.keys(portfolio.holdings).length === 0 ? (
-                <div className="text-[11px]" style={{ color: V.muted }}>No positions yet.</div>
-              ) : (
-                <div className="space-y-2">
-                  {Object.entries(portfolio.holdings).map(([ticker, h]) => {
-                    const price = priceByTicker[ticker] || 0;
-                    const gain = (price - h.avgCost) * h.shares;
-                    const gainPct = h.avgCost ? ((price - h.avgCost) / h.avgCost) * 100 : 0;
-                    return (
-                      <div key={ticker} className="flex items-center justify-between text-xs">
-                        <div className="font-mono font-semibold" style={{ color: V.text }}>{ticker} <span style={{ color: V.muted, fontWeight: 400 }}>×{h.shares}</span></div>
-                        <div className="text-right">
-                          <div className="font-mono" style={{ color: V.text }}>${fmt$(price * h.shares)}</div>
-                          <div className="font-mono text-[10px]" style={{ color: gain >= 0 ? V.green : V.red }}>{gain >= 0 ? "+" : ""}{fmt$(gain)} ({gainPct.toFixed(1)}%)</div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            <div className="rounded-xl border p-4" style={{ borderColor: V.border, background: V.panel }}>
-              <span className="text-xs font-mono tracking-widest" style={{ color: V.muted }}>CLUB LEADERBOARD {dbAvailable && "· LIVE"}</span>
-              <div className="mt-3 space-y-1.5">
-                {!dbAvailable && <div className="text-[11px]" style={{ color: V.muted }}>Connect Firebase to enable the leaderboard.</div>}
-                {dbAvailable && leaderboard.length === 0 && <div className="text-[11px]" style={{ color: V.muted }}>No players yet.</div>}
-                {leaderboard.slice(0, 8).map((p, i) => (
-                  <div key={p.name} className="flex items-center justify-between text-xs">
-                    <span className="flex items-center gap-2 min-w-0">
-                      <span className="font-mono w-4 shrink-0" style={{ color: V.muted }}>{i + 1}</span>
-                      <span className="truncate" style={{ color: p.name === playerName ? V.amber : V.text }}>{p.name}</span>
-                    </span>
-                    <span className="font-mono shrink-0" style={{ color: V.text }}>${fmt$(p.netWorth)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {showReset && (
-        <div className="fixed inset-0 flex items-center justify-center p-6 z-50" style={{ background: "rgba(0,0,0,0.6)" }}>
-          <div className="rounded-xl border p-5 max-w-xs w-full" style={{ background: V.panel, borderColor: V.border }}>
-            <div className="font-semibold text-sm mb-3" style={{ color: V.text }}>Reset your portfolio?</div>
-            <p className="text-xs mb-4" style={{ color: V.muted }}>This clears your cash and holdings back to ${STARTING_CASH.toLocaleString()}. Market prices are shared and won't be affected.</p>
-            <div className="grid grid-cols-2 gap-2">
-              <button onClick={() => setShowReset(false)} className="rounded-lg py-2 text-xs border" style={{ borderColor: V.border, color: V.text }}>Cancel</button>
-              <button onClick={handleReset} className="rounded-lg py-2 text-xs font-semibold" style={{ background: V.red, color: "#2A0A0B" }}>Reset</button>
-            </div>
-          </div>
-        </div>
-      )}
+  <section class="hero">
+    <div class="eyebrow">LEBANON HIGH SCHOOL ECONOMICS CLUB</div>
+    <h1>The Mock Market</h1>
+    <p class="sub">Trade the 50 largest companies on the NYSE with $100,000 in pretend money. Real prices, real stakes for your portfolio's pride — zero real risk.</p>
+    <a class="play" href="play/">Play now <span aria-hidden="true">→</span></a>
+    <div class="badges">
+      <div class="badge"><span class="dot" style="background:var(--green)"></span>Real NYSE prices, updated hourly</div>
+      <div class="badge"><span class="dot" style="background:var(--amber)"></span>$100,000 starting cash</div>
+      <div class="badge"><span class="dot" style="background:var(--red)"></span>Live club leaderboard</div>
     </div>
-  );
-}
+  </section>
 
-ReactDOM.createRoot(document.getElementById("root")).render(<MockXMarketV2 />);
+  <section>
+    <div class="intro">
+      <h2>What is The Mock Market?</h2>
+      <p class="lede">The Mock Market is the club's paper-trading simulator. Every ticker on the board is a real, currently-listed NYSE company — Eli Lilly, JPMorgan Chase, Walmart, and 47 others — and prices are pulled from real market data roughly once an hour during trading hours. Nobody's actual money moves. What moves is your standing on the club leaderboard.</p>
+    </div>
+    <div class="features">
+      <div class="feature">
+        <div class="glyph" style="color:var(--green)">$</div>
+        <h3>Real companies, real prices</h3>
+        <p>No invented tickers. The board tracks the 50 largest NYSE-listed companies by market cap, with prices refreshed from live market data during trading hours.</p>
+      </div>
+      <div class="feature">
+        <div class="glyph" style="color:var(--amber)">#</div>
+        <h3>$100,000 to start</h3>
+        <p>Every member joins with the same $100,000 in play money. Your net worth is cash plus whatever your holdings are worth right now.</p>
+      </div>
+      <div class="feature">
+        <div class="glyph" style="color:var(--red)">%</div>
+        <h3>One shared leaderboard</h3>
+        <p>Everyone in the club trades against the same real market, at the same time. The leaderboard shows how your calls stack up against everyone else.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="intro">
+      <h2>How to play</h2>
+      <p class="lede">Six steps, start to finish.</p>
+    </div>
+    <ol class="stack">
+      <li class="step"><div class="num">01</div><div class="txt"><h3>Open the game</h3><p>Click Play now on this page. Bookmark it so you can get back between meetings.</p></div></li>
+      <li class="step"><div class="num">02</div><div class="txt"><h3>Join the market</h3><p>Type your name and click "Join the market." This creates your own $100,000 portfolio — nobody else can see or touch it.</p></div></li>
+      <li class="step"><div class="num">03</div><div class="txt"><h3>Research before you buy</h3><p>Use the search bar to find a company, or sort by "Top movers" to see what’s swinging today. Read the sector and think before you click.</p></div></li>
+      <li class="step"><div class="num">04</div><div class="txt"><h3>Buy or sell</h3><p>Select a stock, enter a share count, and hit Buy or Sell. Your cash balance and holdings update immediately.</p></div></li>
+      <li class="step"><div class="num">05</div><div class="txt"><h3>Watch your net worth</h3><p>Prices refresh roughly once an hour during market hours. Your total net worth — cash plus holdings — updates automatically as they do.</p></div></li>
+      <li class="step"><div class="num">06</div><div class="txt"><h3>Check the leaderboard</h3><p>See your rank against the rest of the club, updated every time anyone trades.</p></div></li>
+    </ol>
+    <div class="play-row"><a class="play" href="play/">Play now <span aria-hidden="true">→</span></a></div>
+  </section>
+
+  <section>
+    <div class="intro">
+      <h2>Good habits for smarter trades</h2>
+      <p class="lede">The Mock Market rewards the same habits as real investing.</p>
+    </div>
+    <ul class="stack">
+      <li class="habit"><span class="dot"></span><span><strong>Research before you buy.</strong> Skim a company’s latest earnings or news before trading, not after.</span></li>
+      <li class="habit"><span class="dot"></span><span><strong>Diversify.</strong> Don’t put your whole $100,000 into one stock, no matter how sure you are.</span></li>
+      <li class="habit"><span class="dot"></span><span><strong>Write down why.</strong> Before buying, note what would prove you wrong. It’s the fastest way to learn from a bad trade.</span></li>
+      <li class="habit"><span class="dot"></span><span><strong>Ignore the hype.</strong> A stock trending doesn’t mean it’s a good buy. Check the fundamentals first.</span></li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Frequently asked questions</h2>
+    <div class="stack" id="faq">
+      <div>
+        <button class="faq-btn" type="button" aria-expanded="false" aria-controls="faq1">Is this real money?<span class="marker" aria-hidden="true">+</span></button>
+        <div class="faq-a" id="faq1" hidden><p>No. Every dollar in The Mock Market is virtual. Nothing you do here touches real money, and nothing here is investment advice.</p></div>
+      </div>
+      <div>
+        <button class="faq-btn" type="button" aria-expanded="false" aria-controls="faq2">How often do prices update?<span class="marker" aria-hidden="true">+</span></button>
+        <div class="faq-a" id="faq2" hidden><p>Roughly once an hour on weekdays during NYSE trading hours (9:30am–4:00pm ET). Prices sit frozen outside that window.</p></div>
+      </div>
+      <div>
+        <button class="faq-btn" type="button" aria-expanded="false" aria-controls="faq3">Can I start over?<span class="marker" aria-hidden="true">+</span></button>
+        <div class="faq-a" id="faq3" hidden><p>Yes — click Reset in the top-right corner of the game. It resets your cash and holdings back to $100,000. It doesn’t affect anyone else’s portfolio or the shared prices.</p></div>
+      </div>
+      <div>
+        <button class="faq-btn" type="button" aria-expanded="false" aria-controls="faq4">Can other members see what I’m holding?<span class="marker" aria-hidden="true">+</span></button>
+        <div class="faq-a" id="faq4" hidden><p>No. Only your name and total net worth appear on the leaderboard. Your specific trades and holdings stay private.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p class="club">Lebanon High School Economics Club</p>
+    <p class="tag">Meets every other Tuesday. Bring your questions, not your guesses.</p>
+  </footer>
+
+</main>
+
+<script>
+  // Ticker tape: real symbols and names only — no prices shown here.
+  var TICKERS = [
+    ["LLY","Eli Lilly"], ["JPM","JPMorgan Chase"], ["WMT","Walmart"], ["V","Visa"],
+    ["XOM","Exxon Mobil"], ["JNJ","Johnson & Johnson"], ["MA","Mastercard"],
+    ["ORCL","Oracle"], ["KO","Coca-Cola"], ["CAT","Caterpillar"]
+  ];
+  var tape = document.getElementById("tape");
+  TICKERS.concat(TICKERS).forEach(function (t) {
+    var item = document.createElement("span");
+    item.className = "tape-item";
+    var sym = document.createElement("b");
+    sym.textContent = t[0];
+    var name = document.createElement("span");
+    name.textContent = t[1];
+    item.appendChild(sym);
+    item.appendChild(name);
+    tape.appendChild(item);
+  });
+
+  // FAQ: each question opens and closes independently.
+  document.querySelectorAll("#faq .faq-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var open = btn.getAttribute("aria-expanded") === "true";
+      btn.setAttribute("aria-expanded", String(!open));
+      btn.querySelector(".marker").textContent = open ? "+" : "−";
+      document.getElementById(btn.getAttribute("aria-controls")).hidden = open;
+    });
+  });
 </script>
 </body>
 </html>
